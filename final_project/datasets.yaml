@@ -1,0 +1,10 @@
+# Create Custom Dataset Configuration
+train: C:/Users/User/DeepLearning/Deep_Learning/final_project/datasets/train
+val: C:/Users/User/DeepLearning/Deep_Learning/final_project/datasets/val
+test: C:/Users/User/DeepLearning/Deep_Learning/final_project/datasets/test
+    
+nc: 1
+    
+names: [
+    'license_plate'
+]
