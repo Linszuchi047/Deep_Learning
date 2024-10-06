@@ -137,7 +137,7 @@ def test():
 
     # Save results to CSV
     df = pd.DataFrame(results, columns=['file_name', 'pred1', 'pred2', 'pred3', 'pred4', 'pred5'])
-    df.to_csv('result.csv', index=False)
+    df.to_csv(' pred_313706004.csv', index=False)
 
     print("Predictions saved to result.csv")
 
