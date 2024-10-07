@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 from model import ClassificationModel
 import numpy as np
+import os
 
 
     
@@ -28,8 +29,9 @@ def train():
         transforms.ToTensor(),  # Convert to tensor
         transforms.Normalize(mean=mean, std=std)  # Normalize with mean and std
     ])
+    current_dir = os.path.abspath(os.path.dirname(__file__))
 
-    train_dir = r'C:\Users\User\DeepLearning\Deep_Learning\HW1\train' 
+    train_dir = os.path.join(current_dir, "./train")
     all_train = datasets.ImageFolder(root=train_dir, transform = train_transform)
     # test = datasets.ImageFolder(root = 'ttest', transform = train_transform)
     train_size = int(0.9 * len(all_train))
@@ -145,8 +147,6 @@ def train():
             best_val_acc = val_acc
             torch.save(model.state_dict(), "w_313706004.pth")
 
-    # Save the final model
-    torch.save(model.state_dict(), "wf_313706004_model.pth")
 
 if __name__ == "__main__":
     train()
