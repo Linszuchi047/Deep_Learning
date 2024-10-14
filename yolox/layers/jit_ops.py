@@ -119,7 +119,7 @@ class JitOp:
 
 class FastCOCOEvalOp(JitOp):
 
-    def __init__(self, name="fast_cocoeval"):
+    def __init__(self, name="fast_coco_eval_api"):
         super().__init__(name=name)
 
     def absolute_name(self):
