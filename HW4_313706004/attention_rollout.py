@@ -43,9 +43,6 @@ class AttentionRollout:
             Note: Due to @staticmethod, "self" here refers to the "Attention" module instance, not the class itself.
 
         """
-        # write your code here
-        self.attn_weights = None  # save the attention map into this variable
-        pass
     
     def get_attention(self, module, input, output):
         self.attentions.append(module.attn_weights.detach().cpu())
@@ -75,11 +72,36 @@ class AttentionRollout:
         5. Normalize the values inside the mask to [0.0, 1.0]
 
         """
-        result = torch.eye(self.attentions[0].size(-1))
+        # result = torch.eye(self.attentions[0].size(-1))
+        # with torch.no_grad():
+        #     for attention in self.attentions:
+        #         # Write your code(Attention Rollout) here to update "result" matrix
+        #         pass
+        result = torch.eye(self.attentions[0].size(-1))  # Initialize the result with an identity matrix
         with torch.no_grad():
             for attention in self.attentions:
-                # Write your code(Attention Rollout) here to update "result" matrix
-                pass
+                # Fuse attention heads using the mean filter
+                attention = attention.mean(dim=1)  # Average over all heads
+
+                # Optional: Normalize the attention map
+                attention = attention / attention.sum(dim=-1, keepdim=True)
+
+                # Add identity matrix for residual connection (attention includes itself)
+                attention += torch.eye(attention.size(-1))
+
+                # Matrix multiplication for cumulative attention
+                result = torch.matmul(result, attention)
+
+        # # Extract the attention flow for the [CLS] token
+        # mask = result[0, 0, 1:]  # 0=batch index, 0=[CLS] token, 1:=rest tokens
+
+        # # Reshape to a 2D map
+        # width = int(mask.size(-1) ** 0.5)  # Assuming square attention
+        # mask = mask.reshape(width, width).numpy()
+
+        # # Normalize the mask
+        # mask = mask / np.max(mask)
+        # return mask
 
 
 
