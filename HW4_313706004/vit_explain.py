@@ -1,13 +1,13 @@
+import torch
 import argparse
 import sys
-import torch
 from PIL import Image
 from torchvision import transforms
 import numpy as np
 import cv2
 
-from rollout import VITAttentionRollout
-# from vit_grad_rollout import VITAttentionGradRollout
+from vit_rollout import VITAttentionRollout
+from vit_grad_rollout import VITAttentionGradRollout
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -53,7 +53,7 @@ if __name__ == '__main__':
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
     ])
-    img = Image.open(args.image_path)
+    img = Image.open(args.image_path).convert('RGB')  # Ensure image is RGB
     img = img.resize((224, 224))
     input_tensor = transform(img).unsqueeze(0)
     if args.use_cuda:
@@ -62,7 +62,7 @@ if __name__ == '__main__':
     if args.category_index is None:
         print("Doing Attention Rollout")
         attention_rollout = VITAttentionRollout(model, head_fusion=args.head_fusion, 
-            discard_ratio=args.discard_ratio)
+            discard_ratio=args.discard_ratio, attention_layer_name='attn.proj')
         mask = attention_rollout(input_tensor)
         name = "attention_rollout_{:.3f}_{}.png".format(args.discard_ratio, args.head_fusion)
     else:
@@ -71,7 +71,6 @@ if __name__ == '__main__':
         mask = grad_rollout(input_tensor, args.category_index)
         name = "grad_rollout_{}_{:.3f}_{}.png".format(args.category_index,
             args.discard_ratio, args.head_fusion)
-
 
     np_img = np.array(img)[:, :, ::-1]
     mask = cv2.resize(mask, (np_img.shape[1], np_img.shape[0]))
