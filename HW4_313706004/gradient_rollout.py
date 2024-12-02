@@ -44,10 +44,18 @@ class GradientRollout:
             Note: Due to @staticmethod, "self" here refers to the "Attention" module instance, not the class itself.
 
         """
+        
 
         # write your code here
         self.attn_weights = None # save the attention map into this variable
         pass
+        batch_size, seq_len, _ = x.size()
+        qkv = self.qkv(x).reshape(batch_size, seq_len, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]
+        attn = (q @ k.transpose(-2, -1)) * (self.scale)
+        attn = attn.softmax(dim=-1)
+        self.attn_weights = attn  # Save the attention map
+        return (attn @ v).transpose(1, 2).reshape(batch_size, seq_len, -1)
 
     # Define a hook function to extract attention weights
     def get_attention(self, module, input, output):
@@ -68,13 +76,14 @@ class GradientRollout:
         self.attention_grads = []
     
     
-    def gradient_rollout(self):
+    def gradient_rollout(self, discard_ratio = 0.8):
         """
 
         TODO:
             Define the attention rollout function that accumulate the final attention flows.
             You need to return parameter "mask", which should be the final attention flows.  
             You can follow the below procedures:
+
 
             For each attention layers:
                 1. perform matrix mutiplication on current attention map and gradient
@@ -89,24 +98,44 @@ class GradientRollout:
 
         """
         result = torch.eye(self.attentions[0].size(-1))
-        for attention, grad in zip(self.attentions, self.attention_grads): 
-            # Write your code(Gradient Rollout) here to update "result" matrix
-            pass
-        
+        with torch.no_grad():
+            for attention, grad in zip(self.attentions, self.attention_grads): 
+                # Write your code(Gradient Rollout) here to update "result" matrix
+                # 使用梯度作为注意力的权重
+                    weights = grad
+                    attention_heads_fused = (attention * weights).mean(dim=1)
+
+                    # 将小于0的注意力值设为0（因为负值可能没有意义）
+                    attention_heads_fused[attention_heads_fused < 0] = 0
+
+                    # 丢弃最小的注意力值，但保留 [CLS] token
+                    flat = attention_heads_fused.view(attention_heads_fused.size(0), -1)
+                    _, indices = flat.topk(int(flat.size(-1) * discard_ratio), dim=-1, largest=False)
+                    flat[0, indices] = 0
+
+                    # 添加单位矩阵用于保持原始的自注意力特性
+                    I = torch.eye(attention_heads_fused.size(-1), device=attention_heads_fused.device)
+                    a = (attention_heads_fused + I) / 2
+                    a = a / a.sum(dim=-1, keepdim=True)
+
+                    # 逐层累积注意力
+                    result = torch.matmul(a, result)
+            
 
 
 
-        """
-        if you have variable "result" in correct shape(shape of attenion map), then this part should work properly.
-        """
-        # Look at the total attention between the class token,
-        # and the image patches
-        mask = result[0, 0 , 1 :]
-        # In case of 224x224 image, this brings us from 196 to 14
-        width = int(mask.size(-1)**0.5)
-        mask = mask.reshape(width, width).numpy()
-        mask = mask / np.max(mask)
-        return mask
+            """
+            if you have variable "result" in correct shape(shape of attenion map), then this part should work properly.
+            """
+            # Look at the total attention between the class token,
+            # and the image patches
+            mask = result[0, 0 , 1 :]
+            # In case of 224x224 image, this brings us from 196 to 14
+            width = int(mask.size(-1)**0.5)
+            mask = mask.reshape(width, width).numpy()
+            mask = (mask / np.max(mask))
+            # mask = 1 - (mask / np.max(mask))
+            return mask
 
 
     def perform_backpropagation(self, input_tensor, target_category):
@@ -128,6 +157,19 @@ class GradientRollout:
 
         # write your code here to perform backpropagation
         pass
+        self.model.zero_grad()
+        output = self.model(input_tensor)
+        
+         
+        category_mask = torch.ones(output.size())*(-20)
+        category_mask[: ,target_category] = 1500
+
+        
+        loss = (output * category_mask).sum()
+    
+
+        # 反向傳播計算梯度
+        loss.backward(retain_graph=True)
         
     def show_mask_on_image(self, img, mask):
 

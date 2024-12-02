@@ -43,6 +43,23 @@ class AttentionRollout:
             Note: Due to @staticmethod, "self" here refers to the "Attention" module instance, not the class itself.
 
         """
+        # write your code here
+        self.attn_weights = None  # save the attention map into this variable
+        # Query, Key, Value computation
+        qkv = self.qkv(x).reshape(x.shape[0], x.shape[1], 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]
+
+        # Compute scaled dot-product attention
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+        attn = attn.softmax(dim=-1)
+
+        # Save the attention map
+        self.attn_weights = attn  # Save attention weights for later use
+
+        # Return the output of the attention operation
+        out = (attn @ v).transpose(1, 2).reshape(x.shape[0], x.shape[1], -1)
+        out = self.proj(out)
+        return out
     
     def get_attention(self, module, input, output):
         self.attentions.append(module.attn_weights.detach().cpu())
@@ -54,7 +71,7 @@ class AttentionRollout:
         self.attentions = []
     
 
-    def attention_rollout(self):
+    def attention_rollout(self, head_fusion = 'mean', discard_ratio = 0.6, weights=[0.2, 0.6, 0.1]):
         """
 
         TODO:
@@ -72,36 +89,79 @@ class AttentionRollout:
         5. Normalize the values inside the mask to [0.0, 1.0]
 
         """
-        # result = torch.eye(self.attentions[0].size(-1))
-        # with torch.no_grad():
-        #     for attention in self.attentions:
-        #         # Write your code(Attention Rollout) here to update "result" matrix
-        #         pass
-        result = torch.eye(self.attentions[0].size(-1))  # Initialize the result with an identity matrix
+        result = torch.eye(self.attentions[0].size(-1))
         with torch.no_grad():
             for attention in self.attentions:
-                # Fuse attention heads using the mean filter
-                attention = attention.mean(dim=1)  # Average over all heads
+                # Write your code(Attention Rollout) here to update "result" matrix
+   
+                if head_fusion == "mean":
+                    attention_heads_fused = attention.mean(axis=1)
+                elif head_fusion == "max":
+                    attention_heads_fused = attention.max(axis=1)[0]
+                elif head_fusion == "min":
+                    attention_heads_fused = attention.min(axis=1)[0]
+                elif head_fusion == "weighted":
+                    weights = torch.tensor(weights, device=attention.device, dtype=attention.dtype)
+                    weights = weights / weights.sum()  # Normalize weights to sum to 1
+                    attention_heads_fused = (attention * weights.view(1, -1, 1, 1)).sum(dim=1)  # Weighted sum
+                else:
+                    raise ValueError("Unsupported head fusion type. Choose from 'mean', 'min', 'max', or 'weighted'.")
 
-                # Optional: Normalize the attention map
-                attention = attention / attention.sum(dim=-1, keepdim=True)
+                # Drop the lowest attentions, but
+                # don't drop the class token
+                flat = attention_heads_fused.view(attention_heads_fused.size(0), -1)
+                _, indices = flat.topk(int(flat.size(-1)*discard_ratio), -1, False)
+                indices = indices[indices != 0]
+                flat[0, indices] = 0
 
-                # Add identity matrix for residual connection (attention includes itself)
-                attention += torch.eye(attention.size(-1))
+                I = torch.eye(attention_heads_fused.size(-1))
+                a = (attention_heads_fused + 1.0*I)/2
+                a = a / a.sum(dim=-1)
 
-                # Matrix multiplication for cumulative attention
-                result = torch.matmul(result, attention)
+                result = torch.matmul(a, result)
+                # Normalize the attention matrix to ensure values sum to 1
+                # attention_heads_fused = attention_heads_fused / attention_heads_fused.sum(dim=-1, keepdim=True)
+            
+                # # Add skip connection (identity matrix)
+                # I = torch.eye(attention_heads_fused.size(-1), device=attention_heads_fused.device)
+                # attention_with_skip = attention_heads_fused + I
 
-        # # Extract the attention flow for the [CLS] token
-        # mask = result[0, 0, 1:]  # 0=batch index, 0=[CLS] token, 1:=rest tokens
+                # # Normalize again to ensure rows sum to 1
+                # attention_with_skip = attention_with_skip / attention_with_skip.sum(dim=-1, keepdim=True)
 
-        # # Reshape to a 2D map
-        # width = int(mask.size(-1) ** 0.5)  # Assuming square attention
-        # mask = mask.reshape(width, width).numpy()
+                # # Apply cumulative attention rollout: R_l = A_l * R_(l-1)
+                # result = torch.matmul(attention_with_skip, result)
 
-        # # Normalize the mask
-        # mask = mask / np.max(mask)
-        # return mask
+        # Optionally focus on specific target classes
+        # if target_classes is None:
+        #     target_classes = list(range(1, result.size(1)))  # Default: all tokens except [CLS]
+
+        # combined_mask = None
+        # for class_idx in target_classes:
+        #     # Extract the attention map for the target class
+        #     mask = result[0, class_idx, 1:]  # Exclude [CLS] token
+        #     width = int(mask.size(-1) ** 0.5)
+        #     mask = mask.reshape(width, width).numpy()
+        #     mask = mask / np.max(mask)  # Normalize to [0, 1]
+
+        #     # Apply further enhancements for background suppression and target emphasis
+        #     mask = np.where(mask < 0.1, mask * 0.05, mask)  # Suppress low attention values
+        #     mask = np.clip(mask, 0.1, 1.0)  # Clip values for better contrast
+
+        #     # Double non-linear transformation for stronger contrast
+        #     mask = np.power(mask, 2.0)
+        #     mask = np.power(mask, 1.5)
+
+        #     # Normalize again for consistent visualization
+        #     mask = mask / np.max(mask)
+
+        #     if combined_mask is None:
+        #         combined_mask = mask
+        #     else:
+        #         combined_mask = np.maximum(combined_mask, mask)
+
+        # return combined_mask
+
 
 
 

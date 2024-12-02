@@ -60,50 +60,186 @@ class AttentionRollout:
         # clear the stored attention weights
         self.attentions = []
     
-    def attention_rollout(self, discard_ratio=0.7, head_fusion="weighted", target_classes=None):
+    # def attention_rollout(self, discard_ratio=0.7, head_fusion="weighted", target_classes=None):
+    #     """
+    #     Perform attention rollout with enhanced focus on neglected regions and balanced coverage.
+    #     """
+    #     result = torch.eye(self.attentions[0].size(-1), device=self.attentions[0].device)
+
+    #     with torch.no_grad():
+    #         for attention in self.attentions:
+    #             # Fuse attention heads adaptively
+    #             if head_fusion == "mean":
+    #                 attention_heads_fused = attention.mean(dim=1)
+    #             elif head_fusion == "max":
+    #                 attention_heads_fused = attention.max(dim=1)[0]
+    #             elif head_fusion == "weighted":
+    #                 # Use head_weights for weighted fusion
+    #                 attention_heads_fused = (attention * self.head_weights.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)).sum(dim=1)
+    #             else:
+    #                 raise ValueError("Unsupported head fusion type. Choose from 'mean', 'max', or 'weighted'.")
+
+    #             # Retain lower attention values more by reducing discard_ratio
+    #             flat = attention_heads_fused.view(attention_heads_fused.size(0), -1)
+    #             _, indices = flat.topk(int(flat.size(-1) * discard_ratio), -1, largest=False)
+    #             flat[0, indices] = 0
+
+    #             # Add residual connection and normalize
+    #             I = torch.eye(attention_heads_fused.size(-1), device=attention_heads_fused.device)
+    #             a = (attention_heads_fused + self.residual_weights * I) / (1 + self.residual_weights)
+    #             a = a / a.sum(dim=-1, keepdim=True)
+
+    #             result = torch.matmul(a, result)
+
+    #     # Focus on multiple target classes or default to all tokens
+    #     if target_classes is None:
+    #         target_classes = list(range(1, result.size(1)))  # Default: all tokens except [CLS]
+
+    #     combined_mask = None
+    #     for class_idx in target_classes:
+    #         mask = result[0, class_idx, 1:]  # Extract attention map excluding [CLS]
+    #         width = int(mask.size(-1) ** 0.5)
+    #         mask = mask.reshape(width, width).numpy()
+    #         mask = mask / np.max(mask)  # Normalize to [0, 1]
+
+    #         # Amplify neglected areas using lower thresholds and ensure coverage
+    #         mask = np.clip(mask, 0.2, 1.0)  # Adjust threshold to retain low values
+
+    #         if combined_mask is None:
+    #             combined_mask = mask
+    #         else:
+    #             combined_mask = np.maximum(combined_mask, mask)
+
+    #     return combined_mask
+    
+
+
+    # def attention_rollout(self, discard_ratio=0.9, head_fusion="weighted", target_classes=None):
+    #     """
+    #     Perform cumulative attention rollout with enhanced focus on target regions and further background suppression.
+        
+    #     Includes the cumulative attention rollout formula:
+    #     R_l = A_l * R_(l-1)
+    #     """
+    #     # Initialize the result matrix as an identity matrix (R1 = I)
+    #     result = torch.eye(self.attentions[0].size(-1), device=self.attentions[0].device)
+
+    #     with torch.no_grad():
+    #         for attention in self.attentions:
+    #             # Fuse attention heads adaptively
+    #             if head_fusion == "mean":
+    #                 attention_heads_fused = attention.mean(dim=1)
+    #             elif head_fusion == "max":
+    #                 attention_heads_fused = attention.max(dim=1)[0]
+    #             elif head_fusion == "weighted":
+    #                 # Weighted fusion of attention heads
+    #                 attention_heads_fused = (attention * self.head_weights.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)).sum(dim=1)
+    #             else:
+    #                 raise ValueError("Unsupported head fusion type. Choose from 'mean', 'max', or 'weighted'.")
+
+    #             # Normalize the attention matrix to ensure values sum to 1
+    #             attention_heads_fused = attention_heads_fused / attention_heads_fused.sum(dim=-1, keepdim=True)
+
+    #             # Add skip connection (identity matrix)
+    #             I = torch.eye(attention_heads_fused.size(-1), device=attention_heads_fused.device)
+    #             attention_with_skip = attention_heads_fused + I
+
+    #             # Normalize again to ensure rows sum to 1
+    #             attention_with_skip = attention_with_skip / attention_with_skip.sum(dim=-1, keepdim=True)
+
+    #             # Apply cumulative attention rollout: R_l = A_l * R_(l-1)
+    #             result = torch.matmul(attention_with_skip, result)
+
+    #     # Optionally focus on specific target classes
+    #     if target_classes is None:
+    #         target_classes = list(range(1, result.size(1)))  # Default: all tokens except [CLS]
+
+    #     combined_mask = None
+    #     for class_idx in target_classes:
+    #         # Extract the attention map for the target class
+    #         mask = result[0, class_idx, 1:]  # Exclude [CLS] token
+    #         width = int(mask.size(-1) ** 0.5)
+    #         mask = mask.reshape(width, width).numpy()
+    #         mask = mask / np.max(mask)  # Normalize to [0, 1]
+
+    #         # Stronger background suppression: compress low values more aggressively
+    #         mask = np.where(mask < 0.2, mask * 0.05, mask)  # Reduce low values to near zero
+    #         mask = np.clip(mask, 0.1, 1.0)  # Further limit lower range for better focus
+
+    #         # Apply double non-linear transformation for stronger contrast
+    #         mask = np.power(mask, 2.0)  # First non-linear transformation
+    #         mask = np.power(mask, 1.5)  # Second non-linear transformation for further enhancement
+
+    #         # Normalize again for consistent visualization
+    #         mask = mask / np.max(mask)
+
+    #         if combined_mask is None:
+    #             combined_mask = mask
+    #         else:
+    #             combined_mask = np.maximum(combined_mask, mask)
+
+    #     return combined_mask
+    def attention_rollout(self, head_fusion="weighted", weights=[0.1, 0.6, 0.3], target_classes=None):
         """
-        Perform attention rollout with enhanced focus on neglected regions and balanced coverage.
+        Perform cumulative attention rollout with enhanced focus on target regions and background suppression.
+        
+        Supports head fusion using mean, min, max, or weighted strategies.
         """
+        # Initialize the result matrix as an identity matrix (R1 = I)
         result = torch.eye(self.attentions[0].size(-1), device=self.attentions[0].device)
 
         with torch.no_grad():
             for attention in self.attentions:
-                # Fuse attention heads adaptively
+                # Fuse the 3 attention heads into a single map
                 if head_fusion == "mean":
-                    attention_heads_fused = attention.mean(dim=1)
+                    attention_heads_fused = attention.mean(dim=1)  # Take mean across heads
                 elif head_fusion == "max":
-                    attention_heads_fused = attention.max(dim=1)[0]
+                    attention_heads_fused = attention.max(dim=1)[0]  # Take max across heads
+                elif head_fusion == "min":
+                    attention_heads_fused = attention.min(dim=1)[0]  # Take min across heads
                 elif head_fusion == "weighted":
-                    # Use head_weights for weighted fusion
-                    attention_heads_fused = (attention * self.head_weights.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)).sum(dim=1)
+                    weights = torch.tensor(weights, device=attention.device, dtype=attention.dtype)
+                    weights = weights / weights.sum()  # Normalize weights to sum to 1
+                    attention_heads_fused = (attention * weights.view(1, -1, 1, 1)).sum(dim=1)  # Weighted sum
                 else:
-                    raise ValueError("Unsupported head fusion type. Choose from 'mean', 'max', or 'weighted'.")
+                    raise ValueError("Unsupported head fusion type. Choose from 'mean', 'min', 'max', or 'weighted'.")
+                    
 
-                # Retain lower attention values more by reducing discard_ratio
-                flat = attention_heads_fused.view(attention_heads_fused.size(0), -1)
-                _, indices = flat.topk(int(flat.size(-1) * discard_ratio), -1, largest=False)
-                flat[0, indices] = 0
+                # Normalize the attention matrix to ensure values sum to 1
+                attention_heads_fused = attention_heads_fused / attention_heads_fused.sum(dim=-1, keepdim=True)
 
-                # Add residual connection and normalize
+                # Add skip connection (identity matrix)
                 I = torch.eye(attention_heads_fused.size(-1), device=attention_heads_fused.device)
-                a = (attention_heads_fused + self.residual_weights * I) / (1 + self.residual_weights)
-                a = a / a.sum(dim=-1, keepdim=True)
+                attention_with_skip = attention_heads_fused + I
 
-                result = torch.matmul(a, result)
+                # Normalize again to ensure rows sum to 1
+                attention_with_skip = attention_with_skip / attention_with_skip.sum(dim=-1, keepdim=True)
 
-        # Focus on multiple target classes or default to all tokens
+                # Apply cumulative attention rollout: R_l = A_l * R_(l-1)
+                result = torch.matmul(attention_with_skip, result)
+
+        # Optionally focus on specific target classes
         if target_classes is None:
             target_classes = list(range(1, result.size(1)))  # Default: all tokens except [CLS]
 
         combined_mask = None
         for class_idx in target_classes:
-            mask = result[0, class_idx, 1:]  # Extract attention map excluding [CLS]
+            # Extract the attention map for the target class
+            mask = result[0, class_idx, 1:]  # Exclude [CLS] token
             width = int(mask.size(-1) ** 0.5)
             mask = mask.reshape(width, width).numpy()
             mask = mask / np.max(mask)  # Normalize to [0, 1]
 
-            # Amplify neglected areas using lower thresholds and ensure coverage
-            mask = np.clip(mask, 0.2, 1.0)  # Adjust threshold to retain low values
+            # Apply further enhancements for background suppression and target emphasis
+            mask = np.where(mask < 0.2, mask * 0.05, mask)  # Suppress low attention values
+            mask = np.clip(mask, 0.1, 1.0)  # Clip values for better contrast
+
+            # Double non-linear transformation for stronger contrast
+            mask = np.power(mask, 2.0)
+            mask = np.power(mask, 1.5)
+
+            # Normalize again for consistent visualization
+            mask = mask / np.max(mask)
 
             if combined_mask is None:
                 combined_mask = mask
@@ -111,6 +247,12 @@ class AttentionRollout:
                 combined_mask = np.maximum(combined_mask, mask)
 
         return combined_mask
+
+
+
+
+
+
 
     def show_mask_on_image(self, img, mask):
         # Normalize the value of img to [0.0, 1.0]
