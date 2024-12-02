@@ -119,48 +119,7 @@ class AttentionRollout:
                 a = a / a.sum(dim=-1)
 
                 result = torch.matmul(a, result)
-                # Normalize the attention matrix to ensure values sum to 1
-                # attention_heads_fused = attention_heads_fused / attention_heads_fused.sum(dim=-1, keepdim=True)
-            
-                # # Add skip connection (identity matrix)
-                # I = torch.eye(attention_heads_fused.size(-1), device=attention_heads_fused.device)
-                # attention_with_skip = attention_heads_fused + I
-
-                # # Normalize again to ensure rows sum to 1
-                # attention_with_skip = attention_with_skip / attention_with_skip.sum(dim=-1, keepdim=True)
-
-                # # Apply cumulative attention rollout: R_l = A_l * R_(l-1)
-                # result = torch.matmul(attention_with_skip, result)
-
-        # Optionally focus on specific target classes
-        # if target_classes is None:
-        #     target_classes = list(range(1, result.size(1)))  # Default: all tokens except [CLS]
-
-        # combined_mask = None
-        # for class_idx in target_classes:
-        #     # Extract the attention map for the target class
-        #     mask = result[0, class_idx, 1:]  # Exclude [CLS] token
-        #     width = int(mask.size(-1) ** 0.5)
-        #     mask = mask.reshape(width, width).numpy()
-        #     mask = mask / np.max(mask)  # Normalize to [0, 1]
-
-        #     # Apply further enhancements for background suppression and target emphasis
-        #     mask = np.where(mask < 0.1, mask * 0.05, mask)  # Suppress low attention values
-        #     mask = np.clip(mask, 0.1, 1.0)  # Clip values for better contrast
-
-        #     # Double non-linear transformation for stronger contrast
-        #     mask = np.power(mask, 2.0)
-        #     mask = np.power(mask, 1.5)
-
-        #     # Normalize again for consistent visualization
-        #     mask = mask / np.max(mask)
-
-        #     if combined_mask is None:
-        #         combined_mask = mask
-        #     else:
-        #         combined_mask = np.maximum(combined_mask, mask)
-
-        # return combined_mask
+                
 
 
 

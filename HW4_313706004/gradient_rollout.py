@@ -100,25 +100,19 @@ class GradientRollout:
         result = torch.eye(self.attentions[0].size(-1))
         with torch.no_grad():
             for attention, grad in zip(self.attentions, self.attention_grads): 
-                # Write your code(Gradient Rollout) here to update "result" matrix
-                # 使用梯度作为注意力的权重
+                
                     weights = grad
-                    attention_heads_fused = (attention * weights).mean(dim=1)
-
-                    # 将小于0的注意力值设为0（因为负值可能没有意义）
+                    attention_heads_fused = (attention * weights).mean(dim=1)          
                     attention_heads_fused[attention_heads_fused < 0] = 0
-
-                    # 丢弃最小的注意力值，但保留 [CLS] token
                     flat = attention_heads_fused.view(attention_heads_fused.size(0), -1)
                     _, indices = flat.topk(int(flat.size(-1) * discard_ratio), dim=-1, largest=False)
                     flat[0, indices] = 0
 
-                    # 添加单位矩阵用于保持原始的自注意力特性
+                    
                     I = torch.eye(attention_heads_fused.size(-1), device=attention_heads_fused.device)
                     a = (attention_heads_fused + I) / 2
                     a = a / a.sum(dim=-1, keepdim=True)
 
-                    # 逐层累积注意力
                     result = torch.matmul(a, result)
             
 
